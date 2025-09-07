@@ -1,4 +1,4 @@
-import type { FormData, PlanResults, Sheet, ChartData } from '../types';
+import type { FormData, PlanResults, Sheet } from '../types';
 
 const currency = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -38,7 +38,11 @@ const calcSipRequired = (targetCorpus: number, annualReturn: number, months: num
 export const generatePlan = (formData: FormData): PlanResults => {
     // ---------- CALCULATIONS ----------
     const { rent, groceries, utilities, transport, emi, insurance, subscriptions, education, health, entertainment, shopping, others } = formData;
-    const monthlyExpenses = rent + groceries + utilities + transport + emi + insurance + subscriptions + education + health + entertainment + shopping + others;
+    const expenseBreakdown = Object.entries({ rent, groceries, utilities, transport, emi, insurance, subscriptions, education, health, entertainment, shopping, others })
+        .filter(([, value]) => value > 0)
+        .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
+
+    const monthlyExpenses = expenseBreakdown.reduce((sum, item) => sum + item.value, 0);
 
     const netIncomeAfterTax = formData.netMonthlyIncome - formData.monthlyTaxDeduction + formData.monthlySideIncome;
     const monthlySurplus = netIncomeAfterTax - monthlyExpenses;
@@ -100,30 +104,6 @@ export const generatePlan = (formData: FormData): PlanResults => {
     } else {
         suggestions.push(`Goal Achieved: Your current investments are sufficient to generate your passive income goal. Consider shifting to income-generating assets.`);
     }
-
-    // ---------- CHART DATA ----------
-    const expenseBreakdown = Object.entries({ rent, groceries, utilities, transport, emi, insurance, subscriptions, education, health, entertainment, shopping, others })
-        .filter(([, value]) => value > 0)
-        .map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
-
-    const cashFlow = [
-        { name: 'Cash Flow', income: netIncomeAfterTax, expenses: monthlyExpenses, surplus: Math.max(0, monthlySurplus) }
-    ];
-
-    const investmentProjection = [];
-    let currentValue = formData.currentInvestments;
-    const monthlyInvestment = Math.max(0, monthlySurplus);
-    const monthlyRate = assumedAccumulationReturn / 12;
-    for (let i = 0; i <= formData.targetTimelineMonths; i++) {
-        investmentProjection.push({ month: i, value: Math.round(currentValue) });
-        currentValue = (currentValue + monthlyInvestment) * (1 + monthlyRate);
-    }
-    
-    const chartData: ChartData = {
-        expenseBreakdown,
-        cashFlow,
-        investmentProjection,
-    };
 
     // ---------- DATA SHEETS ----------
     const inputsSheet: Sheet = {
@@ -194,6 +174,5 @@ export const generatePlan = (formData: FormData): PlanResults => {
 
     return {
         sheets: [recommendationsSheet, sipSheet, budgetSheet, allocationSheet, expensesSheet, inputsSheet],
-        chartData,
     };
 };

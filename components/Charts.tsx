@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { ChartData } from '../types';
 
 // This component relies on the Recharts library being loaded globally via CDN.
@@ -18,32 +18,29 @@ const shortCurrencyFormatter = (value: number) => {
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    if (label === 'Cash Flow') { // Bar chart
+    if (!active || !payload || !payload.length) return null;
+
+    // Bar Chart Tooltip
+    if (label === 'Cash Flow') {
         return (
-            <div className="bg-white p-3 border rounded shadow-lg text-sm">
-                <p className="font-bold text-green-600">{`Income: ${currencyFormatter(payload[0].value)}`}</p>
-                <p className="font-bold text-red-500">{`Expenses: ${currencyFormatter(payload[1].value)}`}</p>
-                <p className="font-bold text-blue-600">{`Surplus: ${currencyFormatter(payload[2].value)}`}</p>
+            <div className="bg-white/80 backdrop-blur-sm p-3 border border-gray-200 rounded-lg shadow-lg text-sm transition-all">
+                <p className="font-bold text-green-600">{`Income: ${currencyFormatter(payload.find(p => p.dataKey === 'income')?.value ?? 0)}`}</p>
+                <p className="font-bold text-red-500">{`Expenses: ${currencyFormatter(payload.find(p => p.dataKey === 'expenses')?.value ?? 0)}`}</p>
+                <p className="font-bold text-blue-600">{`Surplus: ${currencyFormatter(payload.find(p => p.dataKey === 'surplus')?.value ?? 0)}`}</p>
             </div>
         );
     }
-    if (payload[0].name === 'month') { // Line chart
+
+    // Line Chart Tooltip (label is the month number)
+    if (typeof label === 'number') {
         return (
-            <div className="bg-white p-3 border rounded shadow-lg text-sm">
-                <p className="label">{`Month ${payload[0].payload.month}`}</p>
-                <p className="intro font-bold">{`Projected Value: ${currencyFormatter(payload[0].value)}`}</p>
+            <div className="bg-white/80 backdrop-blur-sm p-3 border border-gray-200 rounded-lg shadow-lg text-sm transition-all">
+                <p className="font-semibold text-gray-600">{`Month ${label}`}</p>
+                <p className="font-bold text-indigo-600">{`${payload[0].name}: ${currencyFormatter(payload[0].value)}`}</p>
             </div>
         );
     }
-    // Pie chart
-    return (
-      <div className="bg-white p-3 border rounded shadow-lg text-sm">
-        <p className="label">{`${payload[0].name} : ${currencyFormatter(payload[0].value)} (${(payload[0].percent * 100).toFixed(0)}%)`}</p>
-      </div>
-    );
-  }
-  return null;
+    return null;
 };
 
 const ChartCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -53,22 +50,60 @@ const ChartCard: React.FC<{ title: string; children: React.ReactNode }> = ({ tit
     </div>
 );
 
-export const Charts: React.FC<{ chartData: ChartData }> = ({ chartData }) => {
-  // Access Recharts from window at render time to avoid race conditions.
-  const Recharts = window.Recharts;
+const LoadingPlaceholder: React.FC<{ height: string; message?: string }> = ({ height, message }) => (
+    <div className={`flex items-center justify-center ${height} text-gray-500`}>
+        {message ? <span>{message}</span> : <div className="spinner"></div>}
+    </div>
+);
 
-  if (!Recharts) {
+
+export const Charts: React.FC<{ chartData: ChartData }> = ({ chartData }) => {
+  const [recharts, setRecharts] = useState<any | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    let intervalId: number;
+    const timeoutId = setTimeout(() => {
+        clearInterval(intervalId);
+        if (!window.Recharts) {
+            setLoadingStatus('error');
+        }
+    }, 8000); // 8-second timeout
+
+    intervalId = window.setInterval(() => {
+      // Check for a specific component to be more robust
+      if (window.Recharts && window.Recharts.ResponsiveContainer) {
+        setRecharts(window.Recharts);
+        setLoadingStatus('loaded');
+        clearInterval(intervalId);
+        clearTimeout(timeoutId);
+      }
+    }, 100);
+
+    return () => {
+        clearInterval(intervalId);
+        clearTimeout(timeoutId);
+    };
+  }, []);
+
+  const onPieEnter = useCallback((_: any, index: number) => {
+    setActiveIndex(index);
+  }, []);
+
+  if (loadingStatus !== 'loaded') {
+    const message = loadingStatus === 'error' ? 'Could not load chart library.' : undefined;
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ChartCard title="Monthly Expense Breakdown">
-                <div className="flex items-center justify-center h-[300px] text-gray-500">Loading Chart...</div>
+                <LoadingPlaceholder height="h-[300px]" message={message} />
             </ChartCard>
             <ChartCard title="Monthly Cash Flow">
-                <div className="flex items-center justify-center h-[300px] text-gray-500">Loading Chart...</div>
+                <LoadingPlaceholder height="h-[300px]" message={message} />
             </ChartCard>
             <div className="lg:col-span-2">
                 <ChartCard title="Investment Growth Projection">
-                    <div className="flex items-center justify-center h-[400px] text-gray-500">Loading Chart...</div>
+                    <LoadingPlaceholder height="h-[400px]" message={message} />
                 </ChartCard>
             </div>
         </div>
@@ -78,24 +113,69 @@ export const Charts: React.FC<{ chartData: ChartData }> = ({ chartData }) => {
   const {
     ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
     BarChart, Bar, XAxis, YAxis, CartesianGrid,
-    LineChart, Line,
-  } = Recharts;
+    LineChart, Line, Brush, Sector,
+  } = recharts;
+
+    const renderActiveShape = (props: any) => {
+        const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, percent } = props;
+        return (
+          <g>
+            <text x={cx} y={cy - 10} dy={8} textAnchor="middle" fill={fill} className="text-base font-bold">
+              {payload.name}
+            </text>
+            <text x={cx} y={cy + 10} dy={8} textAnchor="middle" fill="#333" className="text-sm">
+              {currencyFormatter(payload.value)}
+            </text>
+             <text x={cx} y={cy + 30} dy={8} textAnchor="middle" fill="#999" className="text-xs">
+              {`(${(percent * 100).toFixed(1)}%)`}
+            </text>
+            <g style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.2))' }}>
+                <Sector
+                    cx={cx}
+                    cy={cy}
+                    innerRadius={innerRadius}
+                    outerRadius={outerRadius}
+                    startAngle={startAngle}
+                    endAngle={endAngle}
+                    fill={fill}
+                />
+                <Sector
+                    cx={cx}
+                    cy={cy}
+                    startAngle={startAngle}
+                    endAngle={endAngle}
+                    innerRadius={outerRadius + 4}
+                    outerRadius={outerRadius + 8}
+                    fill={fill}
+                />
+            </g>
+          </g>
+        );
+    };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard title="Monthly Expense Breakdown">
             <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                    <Pie data={chartData.expenseBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" labelLine={false} label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
-                        const radius = innerRadius + (outerRadius - innerRadius) * 1.2;
-                        const x = cx + radius * Math.cos(-midAngle * Math.PI / 180);
-                        const y = cy + radius * Math.sin(-midAngle * Math.PI / 180);
-                        return (percent > 0.05) ? <text x={x} y={y} fill="currentColor" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" className="text-xs">{`${(percent * 100).toFixed(0)}%`}</text> : null;
-                    }}>
-                        {chartData.expenseBreakdown.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                 <PieChart>
+                    <Pie
+                        activeIndex={activeIndex}
+                        activeShape={renderActiveShape}
+                        data={chartData.expenseBreakdown}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={80}
+                        outerRadius={110}
+                        fill="#8884d8"
+                        dataKey="value"
+                        onMouseEnter={onPieEnter}
+                        nameKey="name"
+                    >
+                        {chartData.expenseBreakdown.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} className="focus:outline-none transition-opacity" style={{ outline: 'none' }} />
+                        ))}
                     </Pie>
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend iconSize={10} />
+                    <Legend iconType="circle" onMouseEnter={onPieEnter} />
                 </PieChart>
             </ResponsiveContainer>
         </ChartCard>
@@ -106,11 +186,11 @@ export const Charts: React.FC<{ chartData: ChartData }> = ({ chartData }) => {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis tickFormatter={shortCurrencyFormatter} />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(230, 230, 230, 0.4)'}} />
                     <Legend />
-                    <Bar dataKey="income" fill="#4ade80" />
-                    <Bar dataKey="expenses" fill="#f87171" />
-                    <Bar dataKey="surplus" fill="#60a5fa" />
+                    <Bar dataKey="income" fill="#4ade80" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="expenses" fill="#f87171" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="surplus" fill="#60a5fa" radius={[4, 4, 0, 0]} />
                 </BarChart>
             </ResponsiveContainer>
         </ChartCard>
@@ -123,8 +203,9 @@ export const Charts: React.FC<{ chartData: ChartData }> = ({ chartData }) => {
                         <XAxis dataKey="month" label={{ value: 'Months', position: 'insideBottom', offset: -5 }} />
                         <YAxis tickFormatter={shortCurrencyFormatter} label={{ value: 'Corpus Value (₹)', angle: -90, position: 'insideLeft' }}/>
                         <Tooltip content={<CustomTooltip />} />
-                        <Legend />
-                        <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={2} dot={false} name="Projected Investment Value" />
+                        <Legend verticalAlign="top" />
+                        <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={2} dot={false} name="Projected Investment Value" activeDot={{ r: 6 }} />
+                         <Brush dataKey="month" height={30} stroke="#8884d8" y={350} />
                     </LineChart>
                 </ResponsiveContainer>
             </ChartCard>

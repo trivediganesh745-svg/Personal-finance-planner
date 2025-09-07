@@ -29,30 +29,13 @@ export interface Sheet {
   data: (string | number)[][];
 }
 
-export interface ExpenseBreakdownData {
-  name: string;
-  value: number;
-}
-
-export interface CashFlowData {
-  name: string;
-  income: number;
-  expenses: number;
-  surplus: number;
-}
-
-export interface InvestmentProjectionData {
-  month: number;
-  value: number;
-}
-
-export interface ChartData {
-  expenseBreakdown: ExpenseBreakdownData[];
-  cashFlow: CashFlowData[];
-  investmentProjection: InvestmentProjectionData[];
-}
-
 export interface PlanResults {
   sheets: Sheet[];
-  chartData: ChartData;
+}
+
+// FIX: Add missing ChartData interface to resolve type error in Charts.tsx
+export interface ChartData {
+  expenseBreakdown: { name: string; value: number }[];
+  cashFlow: { name: string; income: number; expenses: number; surplus: number }[];
+  investmentProjection: { month: number; value: number }[];
 }
