@@ -1,0 +1,5 @@
+{
+  "name": "Interactive Personal Finance Planner",
+  "description": "An interactive web application that allows users to input their financial details to generate a personalized financial plan. The app provides budgeting advice, an investment roadmap, SIP calculations, and actionable recommendations, with an option to download the full plan as a multi-sheet Excel file.",
+  "requestFramePermissions": []
+}
